@@ -89,6 +89,41 @@ guessed.) No empty chunks, no HTML artifacts, no sub-150-char fragments.
 
 ---
 
+## Sample Chunks
+
+Five representative chunks from `chunks.json`, each labeled with its chunk id and source
+document. Each is a complete, retrievable thought on its own.
+
+**[03-2] — source: doc 03, "Tech Dining rebrands, but does not improve" (The Technique)**
+> Currently, Dining operates exactly two full service dining halls on campus, both located
+> on East. At either of these locations, students with meal plans can get unlimited food for
+> a single meal swipe. Unfortunately, no full-service dining hall exists on West Campus. …
+> West used to have a dining hall, Woodruff, until it was closed in favor of a 'dining
+> commons' … West Village provides students with exactly $9 per meal swipe.
+
+**[08-1] — source: doc 08, "Food Around Campus" (GTAE student wiki)**
+> North Avenue & West Village Dining Halls. NAV and West Village serve a wide selection of
+> food. Both halls feature pizza, hot food stations, and a salad bar. … To check West Village
+> "Willage"'s dining hall hours, click … These websites also feature the rotating menus of
+> the two biggest dining areas on campus.
+
+**[09-3] — source: doc 09, "Where To Eat Near Georgia Tech" (The Infatuation)**
+> Hankook Taqueria / Mexican / West Midtown / $$$$ … During lunchtime hours, you'll have to
+> be quick on your feet to scoop up a table … their delicious Mexican-Korean mash-up is one
+> of the most inventive taco plays in the city. The crispy shrimp option … 7.7
+
+**[12-3] — source: doc 12, "GT Meal Plans: The Ultimate Student Guide" (PRKED)**
+> Dining Dollars: This is like a prepaid debit card specifically for food on campus. … you
+> don't pay sales tax on purchases made with Dining Dollars … if you buy them in bulk … you
+> can get a 10% bonus … BuzzCard Funds: … works at over 200 places on & off campus …
+
+**[13-0] — source: doc 13, "Campus Life — Real Student Opinions" (Niche)**
+> Food / Campus Food / C+ … Average Meal Plan Cost / $4,840/ year … What are the best food
+> options on campus? … Chik-fil-a 20% / Student center food court 14% / Subway 10% / Food
+> trucks 10% / Panda express 9% / Tin Drum 8% / Wing Zone 7% …
+
+---
+
 ## Embedding Model
 
 Implemented in [src/index.py](src/index.py).
@@ -126,6 +161,44 @@ questions before paying for anything bigger.
 
 ---
 
+## Retrieval Test Results
+
+Three queries with their top retrieved chunks (cosine distance, source doc, snippet), from
+the retrieval-only smoke test in `src/index.py` (`smoke_test()`).
+
+**Query: "What do students call the West Village dining hall?"**
+```
+0.286  doc 8  Food Around Campus        | NAV and West Village … West Village "Willage"'s dining hall hours …
+0.327  doc 3  Tech Dining rebrands      | Woodruff Dining Hall was also open until 2 a.m. … at West Village …
+0.358  doc 6  Institute extends hours   | The front desk at the West Village dining hall on the west side …
+```
+*Why relevant:* the #1 chunk (distance 0.286) is the only place in the corpus that pairs the
+official name with the nickname — "West Village 'Willage'" — so it's exactly what's needed to
+answer a nickname question. The others are genuinely about West Village too, just without the
+nickname.
+
+**Query: "Where can I get coffee on campus near the CULC?"**
+```
+0.286  doc 1  A full layout of on-campus dining | … the CULC … has a coffee shop and cafe, Kaldi's Coffee, on the 2nd floor …
+0.399  doc 7  Power Rankings            | Whatever the [Foghat] Ferst Place is … (off-topic)
+0.454  doc 10 Top Restaurants Near GT   | 3. Taco Mac … 10 minute walk (off-topic)
+```
+*Why relevant:* the #1 chunk (0.286) names Kaldi's Coffee and locates it on the 2nd floor of the
+CULC — a direct answer, matched on meaning even though the query never says "Kaldi's." This query
+also shows the corpus's weakness: ranks 2–4 drift into "restaurant-shaped" noise (a fan-blog riff,
+Taco Mac) at distances 0.4+, which is why the top result matters and why I keep a distance cutoff.
+
+**Query: "What are some late-night food options on or near campus?"**
+```
+0.246  doc 5  Late night dining         | Students ultimately need food options late at night …
+0.324  doc 8  Food Around Campus        | … late-night options like The Missing T for burgers and wings …
+0.357  doc 4  Meal swipes in Tech Dining| … only places that take meal swipes are Brittain, North Avenue, West Village …
+```
+(On-topic, but note the top two are a 2012 column and the wiki — see the Evaluation Report for how
+the 2012 content skews the generated answer.)
+
+---
+
 ## Grounded Generation
 
 Implemented in [src/answer.py](src/answer.py) using Groq `llama-3.3-70b-versatile`
@@ -159,86 +232,163 @@ de-duplicates by document — falling back to all retrieved sources if the model
 and to none if it abstained. Both interfaces render this as a "Retrieved from" list under
 the answer.
 
-**Query interface:** two front-ends over the same `ask()` function —
-- Web UI: `python app.py` → open `http://localhost:7860` (Gradio; question box + Ask
-  button, answer and "Retrieved from" panels, example questions).
-- CLI: `python ask.py "is the meal plan worth it?"` (one-shot) or `python ask.py`
-  (interactive REPL — the embedding model loads once and stays warm).
+---
+
+## Example Responses
+
+Real system outputs (answer text plus the "Retrieved from" attribution the system appends).
+
+**Example 1 — in-scope, with source attribution**
+> **Q:** What do students call the West Village dining hall?
+> **Answer:** Students refer to the West Village dining hall as "Willage" [S1].
+> **Retrieved from:** • Food Around Campus (GTAE Aero Maker Space Wiki) — https://gtae.gitbook.io/ams/miscellaneous/food-around-campus
+
+**Example 2 — in-scope, with source attribution**
+> **Q:** Where can I get coffee on campus near the CULC?
+> **Answer:** You can get coffee on campus near the CULC at Kaldi's Coffee, located on the
+> second floor of the CULC [S1], or at the Starbucks in the CULC [S2].
+> **Retrieved from:** • A full layout of on-campus dining at Tech (The Technique) —
+> nique.net/life/2023/08/25/… • Bye Week Power Rankings: Tech Dining Experiences (From The Rumble Seat)
+
+**Out-of-scope — refusal**
+> **Q:** What are the opening hours of the campus gym (CRC)?
+> **Answer:** I don't have enough information on that.
+> **Retrieved from:** *(none)*
+
+---
+
+## Query Interface
+
+Two front-ends over the same `ask()` function.
+
+**Input field:** one text box, "Your question."
+**Output fields:** "Answer" — the grounded response with inline `[S#]` citations — and
+"Retrieved from" — the cited source documents with their URLs.
+
+- **Web UI:** `python app.py` → open `http://localhost:7860` (Gradio: question box + Ask
+  button, an Answer panel, a "Retrieved from" panel, and clickable example questions).
+- **CLI:** `python ask.py "is the meal plan worth it?"` (one-shot) or `python ask.py`
+  (interactive REPL — the embedding model loads once and stays warm for follow-ups).
+
+**Sample interaction transcript (CLI):**
+```
+$ python ask.py
+> What do students call the West Village dining hall?
+
+Answer:
+Students refer to the West Village dining hall as "Willage" [S1].
+
+Retrieved from:
+  • Food Around Campus (GTAE Aero Maker Space Wiki (student-run))
+    https://gtae.gitbook.io/ams/miscellaneous/food-around-campus
+------------------------------------------------------------------------
+```
 
 ---
 
 ## Evaluation Report
 
-<!-- Run your 5 test questions from planning.md through your system and record the results.
-     Be honest — a partially accurate or inaccurate result that you explain well is more
-     valuable than a suspiciously perfect result. -->
+Run all five with `python src/evaluate.py`. Results below are verbatim summaries
+of that run (retrieved docs and cosine distances included).
 
 | # | Question | Expected answer | System response (summarized) | Retrieval quality | Response accuracy |
 |---|----------|-----------------|------------------------------|-------------------|-------------------|
-| 1 | | | | | |
-| 2 | | | | | |
-| 3 | | | | | |
-| 4 | | | | | |
-| 5 | | | | | |
+| 1 | The 3 dining halls + which campus side? | Brittain & North Ave on **East**; West Village ("Willage") on **West**; all-you-can-eat | Named Brittain/North Ave/West Village (from doc 14 + doc 12) but said it "does not specify the side of campus" — **missed the East/West split** | Partially relevant (got halls, not the campus-side chunk) | **Partially accurate** |
+| 2 | What do students call West Village? | "Willage" | "Students refer to the West Village dining hall as 'Willage' [S1]." | Relevant (doc 8 @ 0.286) | **Accurate** |
+| 3 | Coffee on campus near the CULC? | Kaldi's Coffee, 2nd floor of CULC | "Kaldi's Coffee, on the second floor of the CULC [S1]" (+ an added "Starbucks in the CULC [S2]" — slightly off; it's in the Barnes & Noble) | Relevant (doc 1 @ 0.286) | **Accurate** (minor stray detail) |
+| 4 | Roughly how much does a meal plan cost? | ~$2,977/sem (guides); ~$4,840/yr (Niche) | Gave only Dining-Dollars ranges ($50–$660) and concluded the total cost "is not clearly stated" — **never surfaced $2,977 or $4,840** | Off-target for the price (price chunks not retrieved) | **Inaccurate** (failure case below) |
+| 5 | Late-night food options? | The Missing T; WingZone & Starbucks at West Village; Waffle House (24h), Insomnia; Sublime (24/7) | Grounded in the **2012** "Late night dining" piece (NADH late-night being cut, Quizno's/Wingnuts gone, Waffle House "not close enough") — missed the current options | Partially relevant (pulled doc 5 ×3 + doc 8, but leaned on the stale doc) | **Partially accurate** |
 
-**Retrieval quality:** Relevant / Partially relevant / Off-target  
-**Response accuracy:** Accurate / Partially accurate / Inaccurate
+**Scorecard:** 2 accurate (Q2, Q3), 2 partially accurate (Q1, Q5), 1 inaccurate (Q4).
+
+Two patterns explain the misses, both predicted in `planning.md`:
+- **Specific sub-facts can be missed even when an "expected" document is retrieved.** Q1 retrieved doc 14/8 (which list the halls) but *not* doc 1, the only chunk that says "two on East — Brittain and North Avenue — and one on West." Hitting the right document ≠ hitting the right sentence.
+- **Staleness.** Q5's top matches are from a 2012 column, so the model answered about 2012 late-night policy. The corpus spans 2012–2026 and the embedder has no notion of "most recent."
 
 ---
 
 ## Failure Case Analysis
 
-<!-- Identify at least one question where retrieval or generation did not work as expected.
-     Write a specific explanation of *why* it failed, tied to a part of the pipeline.
+**Question that failed:** "Roughly how much does a Georgia Tech meal plan cost?"
 
-     "The answer was wrong" is not an explanation.
+**What the system returned:** Only the Dining-Dollars *add-on* ranges ("$50 to $660 … $50,
+$100, $200, $400, or $600") and the conclusion that the total cost "is not clearly stated."
+It never surfaced the actual figures — ~$2,977/semester (the guides) or ~$4,840/year (Niche).
 
-     "The relevant information was split across a chunk boundary, so retrieval returned
-     only half the context — the model didn't have enough to answer correctly" is an explanation.
+**Root cause (tied to a specific pipeline stage): retrieval / embedding, abetted by chunking.**
+The price figures *are* in the corpus — `src/evaluate.py`'s diagnostic shows them in chunks
+`11-11`, `11-18`, `11-19`, `12-5…12-8`, and `13-0`. But for this query **not one of them appears
+even in the top-12** retrieved chunks (all top results are `price=no`). The reason is an
+embedding mismatch: a natural-language question ("how much does a meal plan cost?") embeds
+closest to *prose* — the meal-plan **explanation** chunks ("which meal plan is right for me",
+the Dining-Dollars description) — while the chunks that actually hold the dollar amounts are
+number-dense **tables** (plan-comparison rows, "Average Meal Plan Cost / $4,840/ year" sitting
+in a list of poll percentages in the Niche chunk). Those table chunks are dominated by digits
+and short tokens, so their embeddings land far from a conversational price question. Increasing
+`k` wouldn't rescue it — the price chunks aren't even in the top 12. The generation step then
+did the *right* thing given bad retrieval: it refused to invent a number and said the cost
+wasn't stated. So this is a retrieval failure surfacing as an incomplete answer, not a
+hallucination.
 
-     "The embedding model treated the professor's nickname as out-of-vocabulary and returned
-     results from an unrelated review" is an explanation. -->
-
-**Question that failed:**
-
-**What the system returned:**
-
-**Root cause (tied to a specific pipeline stage):**
-
-**What you would change to fix it:**
+**What you would change to fix it:** (1) **Hybrid retrieval** — add a keyword/BM25 pass for
+queries containing "cost/price/$" and union it with the semantic results, so a literal `$2,977`
+chunk is retrievable; (2) **chunk tabular content with a natural-language header** — prepend a
+sentence like "Georgia Tech meal plan prices:" to the price tables so their embedding carries
+the concept "price," not just digits; (3) **query expansion** — embed the question alongside a
+paraphrase ("meal plan price per semester in dollars") to pull the question vector toward the
+numeric chunks.
 
 ---
 
 ## Spec Reflection
 
-<!-- Reflect on how planning.md shaped your implementation.
-     Answer both questions with at least 2–3 sentences each. -->
+**One way the spec helped you during implementation:** Writing the Chunking Strategy in
+`planning.md` *around the embedding model's 256-token limit* (rather than picking a round
+number) is what made me verify token counts after building — and that verification caught two
+bugs I'd otherwise have shipped: a chunk inflated to 1,205 chars by overlap (over the cap), and
+a token check that was silently passing because the `tokenizers` library truncates at 128 by
+default. The spec turned "chunk size" from a guess into a constraint I had to test against, so
+the failure was visible at the chunking stage instead of as mysterious bad retrieval later.
+The same "test retrieval before generation" plan surfaced the Q1 and Q4 gaps at the retrieval
+layer, where they were cheap to diagnose.
 
-**One way the spec helped you during implementation:**
-
-**One way your implementation diverged from the spec, and why:**
+**One way your implementation diverged from the spec, and why:** The plan said retrieval would
+use a cosine-distance **threshold to drop weak chunks** as the main way to abstain on
+out-of-scope questions. In practice I set that cutoff loose (0.7) and let the **grounding
+prompt** do the abstaining ("reply exactly 'I don't have enough information on that.'"). On a
+corpus this small, a strict distance threshold either dropped valid borderline matches or let
+junk through depending on the query, whereas the prompt-level rule abstains reliably (verified
+on the out-of-corpus gym-hours question). I also ended with **157 chunks vs. the ~110–140 I
+estimated**, because the list-style guides produce more, smaller entries than I expected, and I
+added a bidirectional small-chunk merge and per-source cleaning (Wayback recovery, slicing the
+Niche page) that the original spec didn't anticipate — the real documents forced those.
 
 ---
 
 ## AI Usage
 
-<!-- Describe at least 2 specific instances where you used an AI tool during this project.
-     For each: what did you give the AI as input, what did it produce, and what did you
-     change, override, or direct differently?
+**Instance 1 — implementing the chunker from the spec**
 
-     "I used Claude to help me code" is not sufficient.
-     "I gave Claude my Chunking Strategy section from planning.md and asked it to implement
-     chunk_text(). It returned a function using a fixed character split. I overrode the
-     chunk size from 500 to 200 because my documents are short reviews, not long guides." -->
+- *What I gave the AI:* my `planning.md` Chunking Strategy section (≈700-char target, ~100
+  overlap, 900-char/256-token cap, line-then-sentence packing) and a sample of the cleaned docs.
+- *What it produced:* a `chunk_text()` doing greedy line/sentence packing, plus a token-count
+  check using the `tokenizers` library.
+- *What I changed or overrode:* inspection showed a 1,205-char chunk — the overlap prepend was
+  pushing chunks past the cap — and the token check was a false pass because `tokenizers`
+  truncates at 128 by default (so nothing could ever "exceed 256"). I directed three fixes:
+  bound the overlap so a chunk can't exceed `hard_max`, merge sub-150-char fragments into a
+  neighbour (so a restaurant's name stays with its blurb), and call `no_truncation()` so the
+  assertion measures the real token length (true max came out to 224).
 
-**Instance 1**
+**Instance 2 — collecting real sources**
 
-- *What I gave the AI:*
-- *What it produced:*
-- *What I changed or overrode:*
-
-**Instance 2**
-
-- *What I gave the AI:*
-- *What it produced:*
-- *What I changed or overrode:*
+- *What I gave the AI:* the domain (GT campus dining) and the instruction to fetch *real* public
+  documents and extract clean text into `documents/`.
+- *What it produced:* a collector that first tried `trafilatura`, then (when that wouldn't
+  install in this environment) a stdlib-only HTML extractor.
+- *What I changed or overrode:* when `nique.net` turned out to be a JavaScript single-page app
+  serving empty shells (and Reddit blocked automated fetching with HTTP 403), I had it add an
+  **Internet Archive Wayback Machine fallback** to recover the six Technique articles, keep
+  per-source cleaning rules (e.g., slicing the Niche page down to just its Food block, stripping
+  the repeated "sapphire card" ad in the Infatuation guide), and **gitignore the bulky raw HTML**
+  while committing only the cleaned `.txt` + a `sources.json` manifest for citation.
