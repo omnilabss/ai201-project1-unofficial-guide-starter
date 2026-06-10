@@ -9,31 +9,47 @@
 
 ## Domain
 
-<!-- What topic or category of knowledge does your system cover?
-     Why is this knowledge valuable, and why is it hard to find through official channels?
-     Example: "Student reviews of CS professors at [university] — useful because official
-     course descriptions don't reflect teaching style, exam difficulty, or workload." -->
+**Campus dining at the Georgia Institute of Technology** — the dining halls
+(Brittain, North Avenue, and West Village, which students call "Willage"), meal
+plans and meal-swipe rules, on-campus eateries and coffee shops, late-night food,
+Tech Square, and nearby Midtown restaurants.
+
+This knowledge is valuable but hard to find through official channels because the
+honest version of it — *which* dining hall is worth the walk, whether the meal plan
+actually pays off, what's really open at 2 a.m., and how the served food compares to
+the posted menu — isn't in the course catalog or on the official dining site (which
+markets an "all-you-can-eat experience" and lists hours). It's spread across the
+student newspaper, a GT fan blog, a student-run wiki, and student review threads,
+it's opinion-heavy, and it goes stale every year as vendors and hours change. This
+system makes that scattered student knowledge searchable and answerable with citations.
 
 ---
 
 ## Document Sources
 
-<!-- List every source you collected documents from.
-     Be specific: include URLs, subreddit names, forum thread titles, or file names.
-     Aim for variety — sources that together cover different subtopics or perspectives. -->
+14 documents collected with `scripts/collect_documents.py` (raw HTML saved under
+`documents/raw/` for provenance; extracted text in `documents/*.txt`; metadata in
+`documents/sources.json`). **Notable collection constraints:** Reddit blocks
+automated fetching (HTTP 403), so the corpus uses other authentic student voices;
+sources that are now JavaScript-only or bot-blocked were recovered from the Internet
+Archive Wayback Machine (marked *(archive)* below).
 
 | # | Source | Type | URL or file path |
 |---|--------|------|-----------------|
-| 1 | | | |
-| 2 | | | |
-| 3 | | | |
-| 4 | | | |
-| 5 | | | |
-| 6 | | | |
-| 7 | | | |
-| 8 | | | |
-| 9 | | | |
-| 10 | | | |
+| 1 | The Technique — "A full layout of on-campus dining at Tech" | Student newspaper *(archive)* | nique.net/life/2023/08/25/a-full-layout-of-on-campus-dining-at-tech/ → `documents/01-…txt` |
+| 2 | The Technique — "An inside look at Tech's Dining Halls and Services" | Student newspaper *(archive)* | nique.net/life/2014/02/06/an-inside-look-at-techs-dining-halls-and-services/ → `02` |
+| 3 | The Technique — "Tech Dining rebrands, but does not improve" | Student newspaper, opinion *(archive)* | nique.net/opinions/2017/10/20/tech-dining-rebrands-but-does-not-improve/ → `03` |
+| 4 | The Technique — "Meal swipes in Tech Dining" | Student newspaper, opinion *(archive)* | nique.net/opinions/2023/02/19/meal-swipes-in-tech-dining/ → `04` |
+| 5 | The Technique — "Late night dining" | Student newspaper, opinion *(archive)* | nique.net/opinions/2012/03/02/late-night-dining/ → `05` |
+| 6 | The Technique — "Institute extends on-campus dining hours" | Student newspaper, news *(archive)* | nique.net/news/2021/10/29/institute-extends-on-campus-dining-hours/ → `06` |
+| 7 | From The Rumble Seat — "Power Rankings: Tech Dining Experiences" | GT fan blog (SB Nation), opinion | fromtherumbleseat.com/2019/9/20/20874335/…tech-dining-experiences… → `07` |
+| 8 | GTAE Aero Maker Space Wiki — "Food Around Campus" | Student-run wiki | gtae.gitbook.io/ams/miscellaneous/food-around-campus → `08` |
+| 9 | The Infatuation — "Where To Eat Near Georgia Tech" | Food guide *(archive)* | theinfatuation.com/atlanta/guides/where-to-eat-near-georgia-tech → `09` |
+| 10 | Rambler Atlanta — "Top Restaurants Near Georgia Tech" | Local blog | rambleratlanta.com/resources/top-restaurants-near-campus/ → `10` |
+| 11 | Rambler Atlanta — "Ultimate Guide to GT Meal Plans" | Local blog | rambleratlanta.com/resources/guide-gt-meal-plans/ → `11` |
+| 12 | PRKED — "Georgia Tech Meal Plans: The Ultimate Student Guide" | Student-services blog | prked.com/post/georgia-tech-meal-plans-the-ultimate-student-guide → `12` |
+| 13 | Niche — "Georgia Tech Campus Life" (food reviews/polls) | Student reviews aggregator *(archive)* | niche.com/colleges/georgia-institute-of-technology/campus-life/ → `13` |
+| 14 | Georgia Tech Dining — "Dining Halls" | Official | dining.gatech.edu/dining-locations/dining-halls → `14` |
 
 ---
 

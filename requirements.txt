@@ -3,6 +3,11 @@ chromadb>=0.6.0
 groq==0.15.0
 python-dotenv==1.0.1
 
+# Document ingestion (Milestone 1 collector: scripts/collect_documents.py).
+# Downloads source HTML; text extraction uses only the Python stdlib (html.parser),
+# so no trafilatura/bs4 needed.
+requests>=2.32.0
+
 # Query interface — add whichever you use for Milestone 5:
 # gradio>=6.9.0
 # streamlit>=1.40.0
