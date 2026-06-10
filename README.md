@@ -55,20 +55,37 @@ Archive Wayback Machine (marked *(archive)* below).
 
 ## Chunking Strategy
 
-<!-- Describe your chunking approach with enough specificity that someone else could reproduce it.
-     Include:
-     - Chunk size (characters or tokens) and why that size fits your documents
-     - Overlap size and why (or why not) you used overlap
-     - Any preprocessing you did before chunking (e.g., stripping HTML, removing headers)
-     - What your final chunk count was across all documents -->
+Implemented in [src/ingest.py](src/ingest.py): it loads `documents/*.txt`, finishes
+cleaning each one, then splits it with greedy line-then-sentence packing.
 
-**Chunk size:**
+**Chunk size:** ~700 characters (~175 tokens) target, hard-capped at 900 (~225 tokens).
+The cap exists because `all-MiniLM-L6-v2` truncates input at 256 tokens and silently
+drops the rest — so a chunk has to fit under that or its tail never gets embedded. After
+building, the true maximum is **224 tokens** (verified with the MiniLM tokenizer,
+truncation disabled — its default 128-token truncation otherwise hides over-long chunks).
 
-**Overlap:**
+**Overlap:** ~100 characters, carried as whole trailing lines/sentences (never a mid-word
+slice), and capped so the carried text can't push a chunk over 900.
 
-**Why these choices fit your documents:**
+**Preprocessing before chunking:** unicode normalization (smart quotes/dashes → ASCII,
+non-breaking spaces removed) and HTML-entity unescaping; per-source boilerplate removal —
+strip the Technique byline/date lines, the related-article and "Advertiser Content" tails
+on the fan blog and meal-plan guides, the repeated "Earn 3x points with your sapphire card"
+ad line in the Infatuation guide, author bios/CTAs, and bare URL/date lines; and the Niche
+page is sliced down to just its Food block (the rest is housing/safety/greek-life). Every
+chunk keeps its source metadata (doc id, title, url) from `documents/sources.json` for
+later citation.
 
-**Final chunk count:**
+**Why these choices fit your documents:** the corpus mixes short opinion columns
+(~150-char sentence-lines) with list-style guides where one entry is a name line plus a
+~300-char blurb. Packing whole lines (falling back to sentences only when a line exceeds
+the cap) keeps a restaurant entry — name, metadata, blurb, rating — or a single argument
+together in one chunk, instead of stranding a name without the fact about it.
+
+**Final chunk count:** **157** across the 14 documents — median 639 chars, mean 599,
+max 894 — comfortably inside the healthy 50–2,000 range. (A touch above the ~110–140 I
+estimated in planning.md: the list-heavy guides produce more, smaller entries than I'd
+guessed.) No empty chunks, no HTML artifacts, no sub-150-char fragments.
 
 ---
 
