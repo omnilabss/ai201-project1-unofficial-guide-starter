@@ -22,3 +22,6 @@ documents/raw/
 
 # macOS
 .DS_Store
+
+# Claude Code local settings (machine-specific permissions)
+.claude/settings.local.json

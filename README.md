@@ -91,15 +91,38 @@ guessed.) No empty chunks, no HTML artifacts, no sub-150-char fragments.
 
 ## Embedding Model
 
-<!-- Name the embedding model you used and explain your choice.
-     Then answer: if you were deploying this system for real users and cost wasn't a constraint,
-     what tradeoffs would you weigh in choosing a different model?
-     Consider: context length limits, multilingual support, accuracy on domain-specific text,
-     latency, and local vs. API-hosted. -->
+Implemented in [src/index.py](src/index.py).
 
-**Model used:**
+**Model used:** `all-MiniLM-L6-v2` via `sentence-transformers` (384-dim, runs locally on
+CPU, free, no API key). The 157 chunks are embedded and stored in a persistent **ChromaDB**
+collection configured for **cosine** distance (`hnsw:space: cosine`), each with its source
+metadata (doc id, title, url). Queries are embedded with the same model; `search()` returns
+the top-k chunks with distances and supports a `max_distance` cutoff so the generation step
+can abstain when nothing relevant comes back.
 
-**Production tradeoff reflection:**
+I tested retrieval before adding any LLM — running 3+ of the eval questions and checking
+both relevance and that the expected source document showed up. All five passed: every
+question retrieved at least one expected source, with top-result cosine distances of
+**0.17–0.29** (well under the 0.5 bar). The lower-ranked results occasionally pull in
+"restaurant-shaped" noise (e.g., a Taco Mac chunk for the coffee query), which is the
+off-topic-retrieval risk I flagged in planning.md — but the #1 result was on-topic in
+every case.
+
+**Production tradeoff reflection:** If cost weren't a constraint, the first upgrade I'd
+buy is **context length**, not raw accuracy — MiniLM truncates at 256 tokens, which is what
+forced the small-chunk design; an 8k-context embedder (OpenAI `text-embedding-3-small`/
+`-large`, Voyage, Cohere v3) would let me embed a whole short opinion column or restaurant
+section as one unit. Second, **domain accuracy**: MiniLM is a tiny general model and can
+fumble GT jargon ("Willage", "NAV", "CULC"); a larger model placed those better. I'd skip
+**multilingual** (English-only corpus). On **local vs. API**: local MiniLM is instant,
+private, and free, which suits a small corpus that updates rarely — an API embedder adds
+latency, cost, and ships data off-box, only worth it at a scale/quality bar this project
+doesn't have. Realistically I'd A/B MiniLM vs. `text-embedding-3-small` on the five eval
+questions before paying for anything bigger.
+
+> Environment note: the local `.venv` lives on an iCloud-synced Desktop, and with the disk
+> ~99% full the heavy `torch` import intermittently hung on evicted-file reads. The fix is
+> environmental (free disk space and/or keep the project off iCloud), not code.
 
 ---
 
