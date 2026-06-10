@@ -128,16 +128,42 @@ questions before paying for anything bigger.
 
 ## Grounded Generation
 
-<!-- Explain how your system enforces grounding — how does it prevent the LLM from answering
-     beyond the retrieved documents?
-     Describe both your system prompt (what instruction you gave the model) and any structural
-     choices (e.g., how you formatted the context, whether you filtered low-relevance chunks).
-     Do not just say "I told it to use the documents" — show the actual instruction or explain
-     the mechanism. -->
+Implemented in [src/answer.py](src/answer.py) using Groq `llama-3.3-70b-versatile`
+at `temperature=0`.
 
-**System prompt grounding instruction:**
+**System prompt grounding instruction:** the model is given the numbered retrieved
+chunks and these rules (verbatim from `SYSTEM` in `src/answer.py`):
 
-**How source attribution is surfaced in the response:**
+> You are The Unofficial Guide to Georgia Tech campus dining. Answer the question
+> using ONLY the information in the numbered sources the user provides. Rules:
+> - Use only facts stated in the sources. Do not add anything from your own knowledge
+>   or assumptions.
+> - If the sources do not contain enough information to answer, reply with exactly:
+>   "I don't have enough information on that." and nothing else.
+> - Cite the sources you use inline with their [S#] labels.
+> - Be concise, and report what students actually say. If the sources disagree (for
+>   example different prices or different years), say so rather than picking one silently.
+
+Grounding isn't only the prompt — it's enforced structurally too: the context is *only*
+the top-k retrieved chunks (the model never sees the full corpus or the open web); a
+`max_distance` cutoff drops weak matches; and **if retrieval returns nothing, the system
+abstains without calling the LLM at all**. `temperature=0` keeps it from improvising.
+Tested end-to-end: an out-of-corpus question ("CRC gym hours") returns the exact abstain
+string, and the meal-plan-cost question correctly reports that the retrieved sources don't
+give a full price rather than inventing one from training knowledge.
+
+**How source attribution is surfaced in the response:** programmatically, not on the
+model's good behaviour. After generation, `ask()` parses the `[S#]` labels the model cited,
+maps them back to those chunks' metadata (title, source, URL) from `sources.json`, and
+de-duplicates by document — falling back to all retrieved sources if the model cited none,
+and to none if it abstained. Both interfaces render this as a "Retrieved from" list under
+the answer.
+
+**Query interface:** two front-ends over the same `ask()` function —
+- Web UI: `python app.py` → open `http://localhost:7860` (Gradio; question box + Ask
+  button, answer and "Retrieved from" panels, example questions).
+- CLI: `python ask.py "is the meal plan worth it?"` (one-shot) or `python ask.py`
+  (interactive REPL — the embedding model loads once and stays warm).
 
 ---
 
