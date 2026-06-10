@@ -56,41 +56,100 @@ no single official source answers a plain-language question like the ones below.
 
 ## Chunking Strategy
 
-<!-- How will you split documents into chunks?
-     State your chunk size (in tokens or characters), overlap size, and explain why those
-     numbers fit the structure of your documents.
-     A review-heavy corpus warrants different chunking than a long FAQ. -->
+**Chunk size:** ~700 characters (≈175 tokens), hard-capped at 900 (≈225 tokens).
 
-**Chunk size:**
+**Overlap:** ~100 characters (≈25 tokens), carried as whole trailing lines/sentences — not a blind mid-word character slice.
 
-**Overlap:**
+**Method:** Greedy line-then-sentence packing. The extracted text comes out
+line-delimited (one line per original block element — a paragraph, a heading, a
+list item), *not* separated by blank lines, so I pack consecutive lines into a
+chunk until the next line would push it past the target, then start a new chunk.
+If a single line is already longer than the cap (rare — a few of the meal-plan
+guide's paragraphs), I fall back to splitting that line on sentence boundaries
+(`. `). Overlap is the last line(s)/sentence(s) of the previous chunk, re-prepended.
 
-**Reasoning:**
+**Reasoning:** The real constraint is the embedding model, not taste. `all-MiniLM-L6-v2`
+truncates input at 256 tokens and silently drops everything past it, so a chunk
+*must* stay under that or its tail never gets embedded — and the tail is exactly
+where a price or a caveat tends to sit. At ~4 chars/token, 900 chars is ~225
+tokens, and I keep margin because the dense stuff in this corpus (`$2,977`, `CULC`,
+`Willage`) tokenizes to more than four characters apiece.
+
+Within that ceiling, 700 fits the *shape* of these documents. I measured them: the
+Technique opinion columns are ~150-character sentence-lines, while the Infatuation,
+Rambler, and GTAE-wiki docs are lists where one entry is a short name line plus a
+~300-character blurb. A 700-char chunk holds one full restaurant entry (sometimes
+two adjacent ones), or a claim plus its supporting sentences from an opinion piece
+— which is the unit a person is actually asking about. Packing whole *lines* rather
+than cutting at a fixed offset is what keeps an entry's name attached to its blurb.
+
+I avoided the two failure extremes deliberately. Too large (say one 2,000-char
+chunk per section): it loses its tail to truncation, and its single vector is the
+average of several unrelated restaurants, so it matches every food query weakly and
+the LLM gets a wall of mostly-irrelevant text. Too small (say 200 chars): it splits
+"`$2,977`" away from "Everyday Unlimited," or a restaurant's name away from why it's
+good, so a retrieved chunk names a thing without the fact about it. I'll know I got
+it wrong if top-k starts returning one giant chunk spanning four restaurants (too
+large) or chunks like "Kaldi's is on the second floor" with no idea what Kaldi's is
+(too small).
+
+**Preprocessing before chunking:** normalize whitespace and unicode (smart quotes
+and em-dashes → ASCII); drop the masthead/byline lines the extractor kept on the
+Technique pages (author, date, "Opinions"); strip the housing/dorms boilerplate that
+leads the Niche page (doc 13) before its food section. The thin official page (doc 14)
+stays as-is — it's a useful "official line" counterpoint. Every chunk carries its
+source metadata (`doc id`, `title`, `url`, `retrieved_via`) pulled from
+`sources.json`, which is what makes citation possible downstream.
+
+**Estimated chunk count:** ~110–140 chunks across the 14 documents (76,840 chars at
+~600 net chars/chunk after overlap). Exact count reported in the README after M3.
 
 ---
 
 ## Retrieval Approach
 
-<!-- Which embedding model are you using (e.g., all-MiniLM-L6-v2 via sentence-transformers)?
-     How many chunks will you retrieve per query (top-k)?
-     If you were deploying this for real users and cost wasn't a constraint, what tradeoffs
-     would you weigh in choosing a different embedding model — context length, multilingual
-     support, accuracy on domain-specific text, latency? -->
+**Embedding model:** `all-MiniLM-L6-v2` via `sentence-transformers` — 384-dimensional,
+runs locally on CPU, free, no API key or rate limit. Its 256-token input cap is the
+constraint that drove the chunk size above. I'll embed the query with the same model
+and use cosine distance.
 
-**Embedding model:**
+**Top-k:** 5. At ~700 chars/chunk that's ~3,500 characters (~900 tokens) of context —
+plenty for `llama-3.3-70b`, and enough to cover the questions whose answers are spread
+across documents (the late-night question pulls from ~3 sources; the dining-halls
+question appears in 3). k=2 would starve those multi-source questions. k=12 would drag
+in off-topic chunks — a Midtown restaurant two miles away when someone asked about
+*on-campus* food, or the Niche housing boilerplate — and tempt the model to merge
+contradictory figures. On top of top-k I'll apply a cosine-distance threshold and drop
+chunks past it, so a question with no real answer in the corpus returns few or zero
+chunks instead of five weak ones (that feeds the "abstain when ungrounded" behavior in
+generation).
 
-**Top-k:**
+Semantic search is the point here: it matches on meaning, not keywords, so "where can
+I grab coffee" lands on "Kaldi's Coffee, on the second floor of the CULC" even though
+they share no words. The flip side — and a real risk for this corpus — is that it also
+matches on vibe, so "good food" happily returns every positive restaurant blurb whether
+or not it's on campus. The distance threshold and metadata are how I keep that in check.
 
-**Production tradeoff reflection:**
+**Production tradeoff reflection:** If cost weren't a constraint, the first thing I'd buy
+isn't accuracy — it's **context length**. MiniLM's 256-token cap is what forced the
+small-chunk design; a model with an 8k-token window (OpenAI `text-embedding-3-small`/
+`-large`, Voyage, Cohere embed v3) would let me embed a whole short opinion column or a
+whole restaurant section as one unit and drop most of the chunking gymnastics. Second,
+**domain accuracy**: MiniLM is a tiny general-purpose model and fumbles GT-specific
+jargon ("Willage," "NAV," "CULC") that a larger model trained on more web text would
+place correctly — directly relevant to the nickname question. **Multilingual** support I
+wouldn't pay for: this corpus is English, so it's wasted capacity unless international
+-student threads enter later. On **local vs. API**: local MiniLM is instant, private,
+free, and re-embeds the whole corpus in seconds, which is right for a small corpus that
+updates rarely; an API embedder adds per-call latency, real cost, a network dependency,
+and ships campus data off-box, so I'd only switch at a scale or quality bar this project
+doesn't have. If I were actually shipping this, I'd A/B MiniLM against
+`text-embedding-3-small` on these five questions first — it's cheap, 1536-dim, 8k
+context, and probably the sweet spot before reaching for a large model.
 
 ---
 
 ## Evaluation Plan
-
-<!-- List your 5 test questions with their expected correct answers.
-     Questions should be specific enough that you can judge whether the system's response
-     is right or wrong. "What are good dining halls?" is too vague.
-     "What do students say about wait times at [dining hall name] during lunch?" is testable. -->
 
 | # | Question | Expected answer |
 |---|----------|-----------------|
@@ -108,40 +167,85 @@ no single official source answers a plain-language question like the ones below.
 
 ## Anticipated Challenges
 
-<!-- What could go wrong? Name at least two specific risks with reasoning.
-     Consider: noisy or inconsistent documents, missing source attribution, off-topic
-     retrieval, chunks that split key information across boundaries. -->
+1. **Stale and conflicting facts across a 2012–2026 corpus.** The documents span
+   fourteen years — the 2012 late-night piece, the 2017 "rebrands" critique, the 2023
+   meal-swipe rules, the 2026 official page. Hours, prices, and vendors all changed in
+   that window, so "how much is the meal plan" has `$2,977`/semester, `$4,840`/year, and
+   older numbers all sitting in the corpus at once (this is the eval question I expect to
+   come back partially accurate). The danger is the model averaging them into one wrong
+   figure, or quoting 2012 hours as if they're current. Mitigation: keep source title and
+   date in each chunk's metadata, and write the system prompt to attribute and flag
+   disagreement/recency rather than silently reconcile.
 
-1.
+2. **Silent truncation at the embedding step.** If cleaning or chunking lets a chunk
+   drift past ~256 tokens, MiniLM cuts the tail off before embedding — and the tail is
+   often where the actual answer lives (a price, an exception, "…but it doesn't take meal
+   swipes"). It fails quietly: no error, just a chunk whose vector doesn't represent its
+   own ending. Mitigation: the 900-char hard cap, plus a token-length assertion in the
+   chunker that logs or skips anything over the limit.
 
-2.
+3. **Off-topic retrieval from "restaurant-shaped" noise.** The Infatuation and Rambler
+   docs are full of Midtown/West Midtown spots a mile or two off campus, and the Niche
+   page carries housing/dorm content. Semantic search will cheerfully return a great-but-
+   far restaurant for "where can I eat on campus," or a dorm-quality line for a food
+   query. Mitigation: strip the Niche housing block during ingestion, lean on the
+   distance threshold, and tag chunks on-campus vs. nearby in metadata if it proves
+   necessary.
+
+4. **Jargon and nicknames the embedder doesn't know.** "Willage" shows up exactly once,
+   glossed in doc 1; "NAV" and "CULC" are used as if everyone knows them. If the single
+   chunk that defines the term isn't in the top-k, the system can't connect "Willage" →
+   West Village, and a small general-purpose embedder may not place the slang near its
+   referent in the first place. This is the failure case I most expect to have to write up.
 
 ---
 
 ## Architecture
 
-<!-- Draw a diagram of your pipeline showing the five stages:
-     Document Ingestion → Chunking → Embedding + Vector Store → Retrieval → Generation
-     Label each stage with the tool or library you're using.
-     You can use ASCII art, a Mermaid diagram, or embed a sketch as an image.
-     You'll use this diagram as context when prompting AI tools to implement each stage. -->
+```
+Ingestion  →  Chunking  →  Embed + Store  →  Retrieval  →  Generation
+(requests +   (~700 char    (all-MiniLM-     (top-k=5,     (Groq
+ html.parser,  chunks,       L6-v2  →         ChromaDB      llama-3.3-70b,
+ Wayback)      100 overlap)  ChromaDB)        search)       cited answer)
+```
+
+User question → embed (same model) → retrieve top-5 chunks → feed as context to the LLM → grounded answer + sources.
 
 ---
 
 ## AI Tool Plan
 
-<!-- For each part of the pipeline below, describe:
-     - Which AI tool you plan to use (Claude, Copilot, ChatGPT, etc.)
-     - What you'll give it as input (which sections of this planning.md, which requirements)
-     - What you expect it to produce
-     - How you'll verify the output matches your spec
-
-     "I'll use AI to help me code" is not a plan.
-     "I'll give Claude my Chunking Strategy section and ask it to implement chunk_text()
-     with my specified chunk size and overlap" is a plan. -->
+I'm working with **Claude (Claude Code in the terminal)**. The pattern is the same at
+every stage: hand it the relevant section of this file as the spec, let it generate the
+module, then verify against a concrete check before moving on. The spec is the contract;
+the five eval questions are the acceptance test. The ingestion script (M1) was already
+built this way.
 
 **Milestone 3 — Ingestion and chunking:**
+- *Give it:* the Documents section, the `sources.json` schema, the two cleaning notes
+  (strip Niche housing boilerplate, leave the thin official doc), and the full Chunking
+  Strategy section (700/100, 900-char cap, line→sentence packing).
+- *Expect:* `ingest.py` that loads `documents/*.txt`, normalizes whitespace/unicode and
+  strips the masthead/byline + Niche housing lines, plus a `chunk_text()` doing the greedy
+  line/sentence packing with overlap, each chunk carrying its source metadata.
+- *Verify:* print a chunk-length histogram and assert nothing exceeds 256 tokens; grep the
+  chunks to confirm the "Willage" sentence and a full Infatuation restaurant entry each
+  land intact inside one chunk (no boundary splits).
 
 **Milestone 4 — Embedding and retrieval:**
+- *Give it:* the Retrieval Approach section.
+- *Expect:* `index.py` that embeds chunks with `all-MiniLM-L6-v2` and persists them to a
+  ChromaDB collection with metadata, and `search(query, k=5)` returning chunks + metadata
+  + distances with the distance threshold applied.
+- *Verify:* run the five eval questions through retrieval only (no LLM yet) and check each
+  returns its expected source doc(s) in the top-5 — if Q5 doesn't pull docs 5/8/9, that's a
+  retrieval bug to fix before it ever reaches generation.
 
 **Milestone 5 — Generation and interface:**
+- *Give it:* the grounding requirement plus a system prompt I'll draft that restricts the
+  model to the retrieved context and requires inline source citations.
+- *Expect:* `answer.py` calling Groq `llama-3.3-70b-versatile` with the retrieved chunks as
+  context, returning an answer + a Sources list, and a small CLI (`python ask.py "question"`).
+- *Verify:* ask an out-of-corpus question ("what are the gym hours?") and confirm it abstains
+  instead of inventing an answer; on a real question, confirm every factual claim traces back
+  to a cited chunk.
